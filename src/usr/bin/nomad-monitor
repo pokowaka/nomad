@@ -1,0 +1,121 @@
+#!/bin/sh
+
+# Nomad Worker: /usr/bin/nomad-monitor
+# Main state machine for Project Nomad. Triggered by the hotplug dispatcher.
+
+# Load OpenWrt's JSON library
+. /usr/share/libubox/jshn.sh
+
+# --- Configuration & Constants ---
+LOG_TAG="nomad-monitor"
+SAFEMODE_FLAG="/etc/nomad_safemode_active"
+# Per DESIGN.md, the System LED is used. The exact name is hardware-dependent.
+# This is a common pattern for the Cudy TR3000's Mediatek SoC.
+LED_SYS_PATH="/sys/class/leds/white:status"
+
+# --- Functions ---
+
+# Controls the system LED patterns based on state.
+# See PRD v3.1, Section P2 for definitions.
+set_led_state() {
+    local state="$1"
+
+    [ -d "$LED_SYS_PATH" ] || {
+        logger -t "$LOG_TAG" "Warning: LED path '$LED_SYS_PATH' not found."
+        return
+    }
+
+    case "$state" in
+        fast_strobe) # 4Hz: Portal Hunt / No WAN
+            logger -t "$LOG_TAG" "LED: Fast Strobe (Portal Hunt)"
+            echo "timer" > "$LED_SYS_PATH/trigger"
+            echo "125" > "$LED_SYS_PATH/delay_on"
+            echo "125" > "$LED_SYS_PATH/delay_off"
+            ;;
+        slow_pulse) # 1Hz: Secure & VPN Active
+            logger -t "$LOG_TAG" "LED: Slow Pulse (Secure)"
+            echo "timer" > "$LED_SYS_PATH/trigger"
+            echo "500" > "$LED_SYS_PATH/delay_on"
+            echo "500" > "$LED_SYS_PATH/delay_off"
+            ;;
+        *)
+            logger -t "$LOG_TAG" "Warning: Unknown LED state requested: $state"
+            ;;
+    esac
+}
+
+# Manages firewall rules for DNS based on the connection phase.
+# See DESIGN.md, Section 1.C ("The Shield").
+apply_firewall_phase() {
+    local phase="$1"
+    
+    # This function assumes a base nftables set is already loaded, containing:
+    #   - `table inet nomad`
+    #   - `chain output_wan { type filter hook output priority filter; policy accept; }`
+    # We dynamically add/remove the DNS drop rule to this chain.
+    
+    logger -t "$LOG_TAG" "Firewall: Applying phase '$phase'."
+    
+    # Always flush dynamic rules first to ensure a clean, predictable state.
+    nft flush chain inet nomad output_wan
+    
+    if [ "$phase" = "secure" ]; then
+        # PRD: Drop UDP/53 on WAN to prevent leaks and force DNS over VPN.
+        nft add rule inet nomad output_wan oifname "wan" udp dport 53 counter name '"block_wan_dns"' drop
+        logger -t "$LOG_TAG" "Firewall: DNS leak protection ENABLED."
+    else # "portal" phase
+        # The flush is enough. The chain's policy is accept, so DNS will work.
+        logger -t "$LOG_TAG" "Firewall: DNS leak protection DISABLED for portal detection."
+    fi
+}
+
+# --- Main Execution ---
+
+logger -t "$LOG_TAG" "Worker process started."
+
+# 1. Check for Safe Mode (Panic Button)
+if [ -f "$SAFEMODE_FLAG" ]; then
+    logger -t "$LOG_TAG" "Safe mode flag detected. Aborting."
+    exit 0
+fi
+
+# 2. Restore steering rules to persist user settings across reboots.
+logger -t "$LOG_TAG" "Mock: Calling /usr/bin/nomad-steer restore"
+/usr/bin/nomad-steer restore
+
+# 3. Determine connectivity state via travelmate.
+logger -t "$LOG_TAG" "Checking WAN connectivity via travelmate..."
+tmate_json=$(tmate json)
+[ -z "$tmate_json" ] && {
+    logger -t "$LOG_TAG" "Error: tmate command returned empty. Assuming disconnected."
+    tmate_connection="disconnected"
+} || {
+    json_load "$tmate_json"
+    json_get_var tmate_connection trm_connection
+}
+
+# 4. Execute State Machine: Portal vs Secure.
+if [ "$tmate_connection" = "connected" ]; then
+    # --- Phase 2: SECURE MODE ---
+    logger -t "$LOG_TAG" "State: CONNECTED. Entering Secure Mode."
+    
+    apply_firewall_phase "secure"
+    set_led_state "slow_pulse"
+    
+    logger -t "$LOG_TAG" "Bringing up wg0 interface..."
+    ifup wg0
+    
+else
+    # --- Phase 1: PORTAL HUNT ---
+    logger -t "$LOG_TAG" "State: DISCONNECTED or PORTAL. Entering Portal Hunt."
+
+    apply_firewall_phase "portal"
+    set_led_state "fast_strobe"
+
+    logger -t "$LOG_TAG" "Ensuring VPN interfaces are down to prevent leaks."
+    ifdown wg0 >/dev/null 2>&1
+    ifdown wg1 >/dev/null 2>&1
+fi
+
+logger -t "$LOG_TAG" "Worker process finished."
+exit 0

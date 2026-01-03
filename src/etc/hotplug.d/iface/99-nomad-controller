@@ -1,0 +1,29 @@
+#!/bin/sh
+
+# Nomad Cortex Dispatcher: /etc/hotplug.d/iface/99-nomad-controller
+# Triggered on ifup events for WAN or Travelmate interfaces.
+# Acquires a lock to safely spawn the nomad-monitor worker in the background.
+
+# Only act on 'ifup'
+[ "$ACTION" = "ifup" ] || exit 0
+
+# Filter for relevant interfaces (physical WAN or any virtual travelmate interface)
+case "$INTERFACE" in
+    wan|trm_*|wwan)
+        logger -t nomad "Cortex Dispatcher: ifup detected on $INTERFACE. Acquiring lock..."
+        
+        # 1. Acquire Lock (Wait max 3s)
+        if lock -t 3 /var/run/nomad.lock; then
+            # 2. Spawn Worker (Non-Blocking)
+            /usr/bin/nomad-monitor &
+            
+            # 3. Release Lock
+            lock -u /var/run/nomad.lock
+            logger -t nomad "Cortex Dispatcher: Worker spawned, lock released."
+        else
+            logger -t nomad "Cortex Dispatcher: Could not acquire lock. Skipping."
+        fi
+        ;;
+esac
+
+exit 0

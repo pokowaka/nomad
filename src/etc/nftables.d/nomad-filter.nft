@@ -1,0 +1,27 @@
+# Project Nomad: The Shield
+# /etc/nftables.d/nomad-filter.nft
+#
+# Base nftables structure. Dynamic rules are added by control scripts.
+# This file is loaded automatically by the main firewall service.
+
+table inet nomad {
+	comment "Project Nomad custom table for policy routing and filtering"
+
+	# Chain for traffic originating FROM the router (output).
+	# Used by 'nomad-monitor' to dynamically block WAN DNS when in Secure Mode.
+	chain output_wan {
+		type filter hook output priority filter; policy accept;
+	}
+
+	# Chain for traffic passing THROUGH the router (forwarded from LAN).
+	chain forward_lan {
+		type filter hook forward priority filter; policy accept;
+
+		# Allow return traffic for established connections
+		ct state established,related accept comment "Allow established connections"
+
+		# Allow LAN clients to query the router's local DNS server.
+		# The router's default LAN IP is 192.168.8.1.
+		udp dport 53 ip daddr 192.168.8.1 accept comment "Allow DNS to router"
+	}
+}

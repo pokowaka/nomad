@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nomad Dashboard</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 2em; background-color: #f4f4f9; color: #333; }
+        .container { max-width: 600px; margin: auto; background: #fff; padding: 2em; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1, h2 { color: #0056b3; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 2em; }
+        th, td { padding: 0.75em; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #f2f2f2; }
+        form { display: grid; gap: 1em; }
+        label { font-weight: bold; }
+        input, select, button { padding: 0.75em; border: 1px solid #ccc; border-radius: 4px; font-size: 1em; }
+        button { background-color: #007bff; color: white; border: none; cursor: pointer; transition: background-color 0.3s; }
+        button:hover { background-color: #0056b3; }
+        #status { margin-top: 1em; padding: 1em; border-radius: 4px; background-color: #e9ecef; white-space: pre-wrap; word-wrap: break-word; }
+        .status-ok { background-color: #d4edda; color: #155724; }
+        .status-error { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Nomad//Steering</h1>
+        <p>Control which network path your devices take.</p>
+
+        <h2>Mock Device List</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Device IP</th>
+                    <th>Current Profile</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>192.168.8.110</td>
+                    <td>Work VPN</td>
+                </tr>
+                <tr>
+                    <td>192.168.8.145</td>
+                    <td>Hotel Direct</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>Manual Steering</h2>
+        <form id="steering-form">
+            <label for="ip-input">Device IP Address:</label>
+            <input type="text" id="ip-input" name="ip" placeholder="e.g., 192.168.8.100" required>
+
+            <label for="profile-select">Select Profile:</label>
+            <select id="profile-select" name="table" required>
+                <option value="102">Hotel Direct (Clear Net)</option>
+                <option value="100">Work VPN (wg0)</option>
+                <option value="101">Home VPN (wg1)</option>
+            </select>
+
+            <button type="submit">Apply Steering Rule</button>
+        </form>
+
+        <div id="status">API status will appear here.</div>
+    </div>
+
+    <script>
+        document.getElementById('steering-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+
+            const form = event.target;
+            const ip = form.elements.ip.value;
+            const table = form.elements.table.value;
+            const statusDiv = document.getElementById('status');
+
+            statusDiv.textContent = 'Sending request...';
+            statusDiv.className = '';
+
+            fetch('/nomad/api/steering.cgi', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ ip, table }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data);
+                statusDiv.textContent = `Status: ${data.status}\nMessage: ${data.message}`;
+                if (data.status === 'ok') {
+                    statusDiv.classList.add('status-ok');
+                } else {
+                    statusDiv.classList.add('status-error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                statusDiv.textContent = 'Error sending request. Check browser console for details.';
+                statusDiv.className = 'status-error';
+            });
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,120 @@
+#!/bin/sh
+
+# Project Nomad: The Steering Wheel
+# /usr/bin/nomad-steer
+# Manages device-to-VPN policy routing rules.
+
+. /usr/share/libubox/jshn.sh
+
+# --- Configuration & Constants ---
+LOG_TAG="nomad-steer"
+MAP_FILE="/etc/nomad/device_map.json"
+MAP_TMP="/tmp/device_map.tmp"
+LOCK_FILE="/var/run/nomad.lock"
+
+# --- Internal Functions ---
+
+# Log a message to syslog
+log() {
+    logger -t "$LOG_TAG" "$1"
+}
+
+# Applies a routing rule for a given IP.
+# Deletes any pre-existing rule for the IP to ensure clean state.
+apply_rule() {
+    local ip="$1"
+    local table="$2"
+    log "Applying rule: from $ip lookup $table"
+    # Delete previous rule if it exists, failures are ignored.
+    ip rule del from "$ip" 2>/dev/null
+    ip rule add from "$ip" lookup "$table"
+}
+
+# Command: 'restore'
+# Reads the entire map file and re-applies all rules.
+# Used on boot to restore state.
+cmd_restore() {
+    log "Executing 'restore': Re-applying all steering rules."
+    [ -f "$MAP_FILE" ] || {
+        log "Device map not found, nothing to restore."
+        exit 0
+    }
+
+    json_load_file "$MAP_FILE"
+    json_get_keys device_ips
+    
+    for ip in $device_ips; do
+        json_get_var table_id "$ip"
+        apply_rule "$ip" "$table_id"
+    done
+    log "'restore' complete."
+}
+
+# Command: 'set <ip> <table>'
+# Atomically updates the map file and applies a single routing rule.
+cmd_set() {
+    local ip="$1"
+    local table="$2"
+
+    # --- Input Validation ---
+    if ! echo "$ip" | grep -qE '^192\.168\.8\.[0-9]{1,3}$'; then
+        log "Error: Invalid IP address format: '$ip'"
+        exit 1
+    fi
+    if ! echo "$table" | grep -qE '^(100|101|102)$'; then
+        log "Error: Invalid table ID: '$table'. Must be 100, 101, or 102."
+        exit 1
+    fi
+    
+    log "Executing 'set' for IP $ip to table $table."
+
+    # --- Atomic Write Operation (with locking) ---
+    (
+        lock -t 10 "$LOCK_FILE" || {
+            log "Error: Could not acquire lock to update map file."
+            exit 1
+        }
+        
+        if [ -f "$MAP_FILE" ]; then
+            json_load_file "$MAP_FILE"
+        else
+            log "Map file not found, creating a new one."
+            json_init
+        fi
+        
+        json_add_string "$ip" "$table"
+        json_dump > "$MAP_TMP"
+        
+        # Atomic replacement
+        mv "$MAP_TMP" "$MAP_FILE"
+        log "Device map updated successfully."
+    )
+
+    # --- Enforce Routing & State ---
+    apply_rule "$ip" "$table"
+    
+    log "Flushing connections for $ip to force re-route."
+    conntrack -D -s "$ip"
+    
+    log "'set' command complete."
+}
+
+
+# --- Main Execution: Command Dispatcher ---
+COMMAND="$1"
+case "$COMMAND" in
+    restore)
+        cmd_restore
+        ;;
+    set)
+        [ -z "$2" ] && echo "Error: 'set' requires an IP address." && exit 1
+        [ -z "$3" ] && echo "Error: 'set' requires a table ID." && exit 1
+        cmd_set "$2" "$3"
+        ;;
+    *)
+        echo "Usage: $0 {restore | set <ip> <table>}"
+        exit 1
+        ;;
+esac
+
+exit 0

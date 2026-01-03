@@ -1,0 +1,47 @@
+#!/bin/sh /etc/rc.common
+
+# Project Nomad: The Safe Mode Bootloader
+# /etc/init.d/10-nomad-safemode
+
+# Runs before the network to atomically swap configs if a panic is triggered.
+START=10
+STOP=90
+
+USE_PROCD=1
+PROG=/bin/true # This is a one-shot script, no long-running process.
+
+# Placeholder for LED path. A red LED would be ideal.
+LED_SYS_PATH="/sys/class/leds/white:status"
+SAFEMODE_FLAG="/etc/nomad_safemode_active"
+
+boot() {
+    # This function is executed by procd at boot time.
+    start "$@"
+}
+
+start_service() {
+    [ -f "$SAFEMODE_FLAG" ] || return 0
+
+    logger -t "nomad-safemode" "PANIC MODE: Flag detected. Loading safe configuration."
+
+    # Atomically override configurations for this boot session only.
+    # This uses the tmpfs overlay in /var/run/config/.
+    cp /etc/config/network.safe /var/run/config/network
+    cp /etc/config/firewall.safe /var/run/config/firewall
+
+    # Set LED to fast strobe to indicate panic mode.
+    if [ -d "$LED_SYS_PATH" ]; then
+        echo "timer" > "$LED_SYS_PATH/trigger"
+        echo "100" > "$LED_SYS_PATH/delay_on"
+        echo "100" > "$LED_SYS_PATH/delay_off"
+    fi
+}
+
+# These are required by procd but can be empty for a one-shot script.
+stop_service() {
+    return 0
+}
+
+reload_service() {
+    return 0
+}

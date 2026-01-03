@@ -1,0 +1,29 @@
+#!/bin/sh
+
+# Project Nomad: First Boot Provisioning
+# /etc/uci-defaults/99-nomad-provision
+#
+# This script runs once on first boot to set up the system.
+
+echo "--- Provisioning Project Nomad ---"
+
+# Disable auto-start on wg0 to prevent boot races.
+# The nomad-monitor script will bring it up when ready.
+uci set network.wg0.auto='0'
+uci commit network
+
+# Enable the safe-mode boot script.
+/etc/init.d/10-nomad-safemode enable
+
+# Ensure all custom scripts are executable as a failsafe.
+chmod +x /etc/hotplug.d/iface/99-nomad-controller
+chmod +x /usr/bin/nomad-monitor
+chmod +x /usr/bin/nomad-steer
+chmod +x /etc/init.d/10-nomad-safemode
+chmod +x /etc/travelmate/user_hooks.sh
+chmod +x /www/nomad/api/steering.cgi
+
+echo "--- Project Nomad Provisioning Complete ---"
+
+# Exit 0 to signal success, so the script is deleted and doesn't run again.
+exit 0
