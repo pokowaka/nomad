@@ -1,27 +1,24 @@
-# Project Nomad: The Shield
-# /etc/nftables.d/nomad-filter.nft
-#
-# Base nftables structure. Dynamic rules are added by control scripts.
-# This file is loaded automatically by the main firewall service.
+chain nomad_forward {
+    # 1. PERMIT: Allow return traffic (Standard efficiency)
+    ct state established,related accept comment "Nomad: Allow established"
 
-table inet nomad {
-	comment "Project Nomad custom table for policy routing and filtering"
+    # 2. PERMIT: LAN clients MUST talk to Router DNS only
+    udp dport 53 ip daddr 192.168.10.1 accept comment "Nomad: Allow DNS to router"
+    tcp dport 53 ip daddr 192.168.10.1 accept comment "Nomad: Allow DNS to router"
 
-	# Chain for traffic originating FROM the router (output).
-	# Used by 'nomad-monitor' to dynamically block WAN DNS when in Secure Mode.
-	chain output_wan {
-		type filter hook output priority filter; policy accept;
-	}
+    # 3. DENY: Stop any client trying to bypass local DNS (The Anti-Leak)
+    udp dport 53 reject comment "Nomad: Block external DNS"
+    tcp dport 53 reject comment "Nomad: Block external DNS"
 
-	# Chain for traffic passing THROUGH the router (forwarded from LAN).
-	chain forward_lan {
-		type filter hook forward priority filter; policy accept;
+    # 4. PERMIT: Allow traffic to valid uplinks (The Kill Switch)
+    oifname { "wg0", "wg1", "wan" } accept comment "Nomad: Allow traffic to valid uplinks"
+    
+    # 5. PERMIT: Action Required / Portal Exception (Conditional)
+    # If the monitor script detects a portal, it should insert a rule here 
+    # OR set a meta mark that we accept.
+    # meta mark 0xCAFE accept comment "Nomad: Allow Portal Traffic"
 
-		# Allow return traffic for established connections
-		ct state established,related accept comment "Allow established connections"
-
-		# Allow LAN clients to query the router's local DNS server.
-		# The router's default LAN IP is 192.168.8.1.
-		udp dport 53 ip daddr 192.168.8.1 accept comment "Allow DNS to router"
-	}
+    # 6. FINAL TERMINATION: Drop everything else
+    # This turns the chain into a whitelist. Without this, you have no shield.
+    drop comment "Nomad: Shield Active - Drop Leak"
 }

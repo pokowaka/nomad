@@ -50,18 +50,18 @@ apply_firewall_phase() {
     local phase="$1"
     
     # This function assumes a base nftables set is already loaded, containing:
-    #   - `table inet nomad`
+    #   - `table inet fw4`
     #   - `chain output_wan { type filter hook output priority filter; policy accept; }`
-    # We dynamically add/remove the DNS drop rule to this chain.
+    # We dynamically add/remove the DNS drop rule to the 'nomad_output' chain.
     
     logger -t "$LOG_TAG" "Firewall: Applying phase '$phase'."
     
     # Always flush dynamic rules first to ensure a clean, predictable state.
-    nft flush chain inet nomad output_wan
+    nft flush chain inet fw4 nomad_output
     
     if [ "$phase" = "secure" ]; then
         # PRD: Drop UDP/53 on WAN to prevent leaks and force DNS over VPN.
-        nft add rule inet nomad output_wan oifname "wan" udp dport 53 counter name '"block_wan_dns"' drop
+        nft add rule inet fw4 nomad_output oifname "wan" udp dport 53 counter name '"block_wan_dns"' drop
         logger -t "$LOG_TAG" "Firewall: DNS leak protection ENABLED."
     else # "portal" phase
         # The flush is enough. The chain's policy is accept, so DNS will work.
