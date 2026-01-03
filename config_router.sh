@@ -41,9 +41,31 @@ uci add_list network.wg_peer_home.allowed_ips="$WG1_ALLOWED_IPS"
 
 # 2. FIREWALL CONFIGURATION
 echo "  - Configuring Firewall..."
-uci -q delete firewall.nomad_include
-uci set firewall.nomad_include='include'
-uci set firewall.nomad_include.path='/etc/nftables.d/nomad-filter.nft'
+
+# --- Nomad rules file (defines the custom chain) ---
+uci -q delete firewall.nomad_rules
+uci set firewall.nomad_rules=include
+uci set firewall.nomad_rules.path='/etc/nftables.d/nomad-filter.nft'
+uci set firewall.nomad_rules.type='nftables'
+uci set firewall.nomad_rules.family='inet'
+uci set firewall.nomad_rules.reload='1'
+
+# --- Nomad shim file (jumps from forward → nomad_forward) ---
+uci -q delete firewall.nomad_shim
+uci set firewall.nomad_shim=include
+uci set firewall.nomad_shim.path='/etc/nftables.d/nomad-shim.nft'
+uci set firewall.nomad_shim.type='nftables'
+uci set firewall.nomad_shim.family='inet'
+uci set firewall.nomad_shim.reload='1'
+
+# Commit and reload firewall
+uci commit firewall
+/etc/init.d/firewall reload
+
+
+# 3. Apply
+uci commit firewall
+/etc/init.d/firewall reload
 
 # Assign Zones
 WAN_ZONE=$(uci show firewall | grep -m 1 ".name='wan'" | cut -d'.' -f2)

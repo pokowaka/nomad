@@ -6,7 +6,8 @@
 # Usage: ./deploy.sh [ROUTER_IP_ADDRESS]
 
 # --- Configuration & Safety ---
-set -e
+# set -e
+set -x
 BASE_DIR=$(dirname "$0")
 
 # 1. Load Secrets
@@ -83,9 +84,6 @@ ssh "${ROUTER_DEST}" '
     /etc/init.d/10-nomad-safemode enable
     echo "  - Restarting core services..."
     /etc/init.d/network restart
-    echo "--- DEBUG: Contents of nomad-filter.nft before firewall restart ---"
-    cat /etc/nftables.d/nomad-filter.nft
-    echo "--- END DEBUG ---"
     /etc/init.d/firewall restart
     echo "  - Triggering monitor to apply initial state..."
     nohup /usr/bin/nomad-monitor >/dev/null 2>&1 &
