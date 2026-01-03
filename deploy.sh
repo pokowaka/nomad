@@ -19,7 +19,7 @@ fi
 ROUTER_IP="${1:-192.168.10.1}"
 ROUTER_USER="root"
 ROUTER_DEST="${ROUTER_USER}@${ROUTER_IP}"
-PACKAGES="travelmate wireguard-tools nftables kmod-nft-core libubox uhttpd ip-full conntrack https-dns-proxy"
+PACKAGES="openssh-sftp-server travelmate wireguard-tools nftables kmod-nft-core libubox uhttpd ip-full conntrack https-dns-proxy"
 
 # --- Functions ---
 # Generates a shell script with UCI commands to configure the router's network.
@@ -100,7 +100,7 @@ echo "Router is online."
 
 # Step 2: Install Dependencies
 echo "[2/5] Installing dependencies via opkg..."
-ssh "${ROUTER_DEST}" "opkg update && opkg install -y ${PACKAGES}"
+ssh "${ROUTER_DEST}" "opkg update && opkg install ${PACKAGES}"
 
 # Step 3: Payload Transfer
 echo "[3/5] Copying project files via scp..."

@@ -1,0 +1,18 @@
+# DUMMY secrets file for testing the deploy script.
+# REPLACE WITH YOUR REAL KEYS AND ENDPOINTS.
+
+# WireGuard Peer 1 (Work VPN)
+WG0_PRIVATE_KEY="+HHzxP3dJdCkcoZXtz/8toUwUJBTGOmPsmr9q/Kiq3g="
+WG0_PUBLIC_KEY="QTXzmXkM5srEYOaBgbjdNsxje2zuDiciKmQDMzwE3n4="
+WG0_ENDPOINT="home.mubunti.com:51820"
+WG0_ADDRESS="10.6.0.8/32"
+
+# WireGuard Peer 2 (Home VPN)
+WG1_PRIVATE_KEY="ccccccccccccccccccccccccccccccccccccccccccc="
+WG1_PUBLIC_KEY="ddddddddddddddddddddddddddddddddddddddddddd="
+WG1_ENDPOINT="2.2.2.2:51820"
+WG1_ADDRESS="10.20.20.2/32"
+
+# Allowed IPs for the peers
+WG0_ALLOWED_IPS="0.0.0.0/0"
+WG1_ALLOWED_IPS="0.0.0.0/0"
